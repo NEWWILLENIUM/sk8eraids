@@ -12,15 +12,15 @@ st.markdown("""
     <style>
     .main { background-color: #0e1117; }
     .stSlider > div [data-baseweb="slider"] { color: #ff4b4b; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #ff4b4b; color: white; }
-    .stSubheader { color: #f0f2f6; font-family: 'Courier New', Courier, monospace; letter-spacing: 2px; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #ff4b4b; color: white; border: none; }
+    .stButton>button:hover { background-color: #ff3333; border: none; }
+    .stSubheader { color: #f0f2f6; font-family: 'Courier New', Courier, monospace; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 5px; }
     </style>
-    """, unsafe_allow_stdio=True)
+    """, unsafe_allow_html=True) # FIXED PARAMETER
 
 # --- 2. SIDEBAR: NAVIGATION & PRESETS ---
 with st.sidebar:
-    st.image("https://www.freeiconspng.com/uploads/skateboarding-icon-10.png", width=100)
-    st.header("SKATERADE PRO")
+    st.title("🛹 SKATERADE")
     
     with st.expander("🎨 VX FILTERING", expanded=True):
         preset = st.selectbox("Load Preset", ["Custom", "Master MK1", "90s Hi-8"])
@@ -57,12 +57,12 @@ with col_left:
 with col_right:
     st.subheader("📺 LIVE LOOK PREVIEW")
     if uploaded_file:
-        # Live Preview Engine: Grabs current frame and applies filters
+        # Live Preview Engine
         cap = cv2.VideoCapture(tfile.name)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
         # Scrubber to choose which frame to preview
-        preview_pos = st.slider("Preview Frame Scrubber", 0, total_frames, total_frames//2)
+        preview_pos = st.slider("Preview Scrubber", 0, total_frames, total_frames//2)
         cap.set(cv2.CAP_PROP_POS_FRAMES, preview_pos)
         ret, frame = cap.read()
         cap.release()
@@ -84,18 +84,16 @@ with col_right:
                     preview_frame[:,:,i] = preview_frame[:,:,i] * (1 - mask * vig_strength)
             
             st.image(preview_frame, channels="BGR", use_container_width=True)
-        else:
-            st.warning("Could not generate preview.")
     else:
-        st.info("Upload a clip to see the live preview.")
+        st.info("Upload a clip to begin.")
 
 # --- 4. EXPORT SECTION ---
 st.markdown("---")
 if uploaded_file:
     if st.button("🎬 EXPORT & DOWNLOAD FINAL VIDEO"):
         progress = st.progress(0)
+        status = st.empty()
         
-        # Rendering Engine
         cap = cv2.VideoCapture(tfile.name)
         fps = cap.get(cv2.CAP_PROP_FPS)
         h, w = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -115,7 +113,7 @@ if uploaded_file:
             
             if vig_strength > 0:
                 mask = np.ones((h, w), dtype=np.float32)
-                cv2.ellipse(mask, (h//2, w//2), (int(w*0.6), int(h*0.7)), 0, 0, 360, 0, -1)
+                cv2.ellipse(mask, (w//2, h//2), (int(w*0.6), int(h*0.7)), 0, 0, 360, 0, -1)
                 mask = cv2.GaussianBlur(mask, (w//3|1, w//3|1), 0)
                 for c in range(3):
                     frame[:,:,c] = frame[:,:,c] * (1 - mask * vig_strength)
@@ -134,10 +132,12 @@ if uploaded_file:
         cap.release()
         out.release()
         
-        # Final Conversion for Mobile Compatibility
+        # Web-Safe Re-encode
+        status.info("Finalizing for download...")
+        final_path = raw_out.replace(".mp4", "_final.mp4")
         with VideoFileClip(raw_out) as clip:
-            final_path = raw_out.replace(".mp4", "_ready.mp4")
             clip.write_videofile(final_path, codec="libx264", audio_codec="aac")
             
         with open(final_path, "rb") as f:
-            st.download_button("💾 SAVE TO CAMERA ROLL / DISK", f, "Skaterade_Export.mp4")
+            st.download_button("💾 DOWNLOAD COMPLETED CLIP", f, "Skaterade_Export.mp4")
+        st.success("Export Complete!")
