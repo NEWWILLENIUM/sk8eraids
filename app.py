@@ -4,141 +4,121 @@ import numpy as np
 import tempfile
 from moviepy import VideoFileClip
 
-# --- 1. PROFESSIONAL UI CONFIG ---
-st.set_page_config(page_title="Skaterade Pro", layout="wide", initial_sidebar_state="expanded")
+# --- 1. PRO THEME & VISIBILITY ---
+st.set_page_config(page_title="Skaterade Ultra", layout="wide")
 
-# Custom CSS for a Professional Dark Theme
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; }
-    .stSlider > div [data-baseweb="slider"] { color: #ff4b4b; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #ff4b4b; color: white; border: none; font-weight: bold; }
-    .stButton>button:hover { background-color: #ff3333; border: none; }
-    .stSubheader { color: #f0f2f6; font-family: 'Courier New', Courier, monospace; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 5px; }
-    [data-testid="stSidebar"] { background-color: #1a1c23; }
+    .main { background-color: #0b0d10; color: #e0e0e0; }
+    .stSlider > div [data-baseweb="slider"] { color: #ff3131; }
+    .stButton>button { 
+        width: 100%; border-radius: 8px; height: 3.5em; 
+        background-color: #ff3131; color: white; font-weight: 800; border: none;
+    }
+    [data-testid="stSidebar"] { background-color: #111418; border-right: 1px solid #222; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. SIDEBAR: UPLOAD & CONTROLS ---
+# --- 2. SESSION STATE ---
+if 'vx' not in st.session_state:
+    st.session_state.vx = {"tint": 0.19, "crush": 1.12, "sat": 1.06, "vig": 1.0}
+
+def reset():
+    st.session_state.vx = {"tint": 0.0, "crush": 1.0, "sat": 1.0, "vig": 0.0}
+
+# --- 3. SIDEBAR ---
 with st.sidebar:
-    st.title("🛹 SKATERADE")
+    st.title("🛹 SKATERADE ULTRA")
+    uploaded_file = st.file_uploader("📥 SOURCE CLIP", type=["mp4", "mov"])
+    st.button("🔄 RESET TO RAW", on_click=reset)
     
-    # Upload moved to sidebar for cleaner UI
-    uploaded_file = st.file_uploader("📥 UPLOAD RAW CLIP", type=["mp4", "mov"])
-    
-    st.markdown("---")
-    
-    with st.expander("🎨 VX FILTERING", expanded=True):
-        preset = st.selectbox("Load Preset", ["Custom", "Master MK1", "90s Hi-8"])
-        
-        # Calibration logic
-        d_tint, d_crush, d_sat, d_vig = 0.0, 1.0, 1.0, 0.0
-        if preset == "Master MK1":
-            d_tint, d_crush, d_sat, d_vig = 0.19, 1.12, 1.06, 1.0
-        elif preset == "90s Hi-8":
-            d_tint, d_crush, d_sat, d_vig = 0.05, 1.4, 0.8, 0.4
+    with st.expander("🎨 COLOR & LOOK", expanded=True):
+        t_val = st.slider("CYAN TINT", 0.0, 0.5, st.session_state.vx["tint"])
+        c_val = st.slider("BLACK CRUSH", 0.5, 2.0, st.session_state.vx["crush"])
+        s_val = st.slider("SATURATION", 0.0, 2.0, st.session_state.vx["sat"])
+        v_val = st.slider("VIGNETTE", 0.0, 1.0, st.session_state.vx["vig"])
 
-        tint = st.slider("CYAN TINT", 0.0, 0.5, d_tint)
-        crush = st.slider("BLACK CRUSH", 0.5, 2.0, d_crush)
-        sat = st.slider("SATURATION", 0.0, 2.0, d_sat)
-        vig_strength = st.slider("VIGNETTE", 0.0, 1.0, d_vig)
-
-    with st.expander("⏱️ RAMPED SLOW-MO"):
+    with st.expander("⏱️ SLOW-MO RAMP"):
         slow_active = st.checkbox("Enable Ramp", value=True)
-        ramp_start = st.slider("Start (%)", 0, 100, 40)
-        ramp_end = st.slider("End (%)", 0, 100, 60)
-        slow_speed = st.slider("Intensity", 0.1, 0.9, 0.5)
+        ramp = st.slider("Window (%)", 0, 100, (40, 60))
+        speed = st.slider("Speed", 0.1, 0.9, 0.5)
 
-# --- 3. MAIN WORKSPACE ---
+# --- 4. THE LIVE EDITOR ---
 if uploaded_file:
-    # Save upload to temp file
     tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     tfile.write(uploaded_file.read())
     
-    # Live Preview Engine
     cap = cv2.VideoCapture(tfile.name)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
-    st.subheader("📺 LIVE LOOK EDITOR")
+    st.subheader("📺 COLOR-ACCURATE PREVIEW")
+    scrub = st.select_slider("SCRUB", options=range(total_frames), value=total_frames//2)
     
-    # Centered Scrubber
-    preview_pos = st.select_slider("SCRUB THROUGH FOOTAGE", options=range(total_frames), value=total_frames//2)
-    
-    cap.set(cv2.CAP_PROP_POS_FRAMES, preview_pos)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, scrub)
     ret, frame = cap.read()
     cap.release()
 
     if ret:
-        # Apply Filter Logic to the Preview Frame
-        f = frame.astype(np.float32) / 255.0
-        f = 1 / (1 + np.exp(-10 * (f - 0.5) * crush)) # Contrast
-        f[:, :, 0] += tint # Blue Tint boost
-        f = np.clip(f * sat, 0, 1)
-        preview_frame = (f * 255).astype(np.uint8)
+        # Convert BGR to RGB immediately for browser accuracy
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        if vig_strength > 0:
-            h, w = preview_frame.shape[:2]
+        # Look Logic
+        img = frame_rgb.astype(np.float32) / 255.0
+        img = 1 / (1 + np.exp(-10 * (img - 0.5) * c_val)) # High-fidelity contrast
+        img[:, :, 2] += t_val # Apply tint to Blue channel in RGB mode
+        img = np.clip(img * s_val, 0, 1)
+        processed = (img * 255).astype(np.uint8)
+        
+        # Professional Vignette
+        if v_val > 0:
+            h, w = processed.shape[:2]
             mask = np.ones((h, w), dtype=np.float32)
             cv2.ellipse(mask, (w//2, h//2), (int(w*0.6), int(h*0.7)), 0, 0, 360, 0, -1)
             mask = cv2.GaussianBlur(mask, (w//3|1, w//3|1), 0)
             for i in range(3):
-                preview_frame[:,:,i] = preview_frame[:,:,i] * (1 - mask * vig_strength)
+                processed[:,:,i] = (processed[:,:,i] * (1 - mask * v_val)).astype(np.uint8)
         
-        # Display the single workspace video/image
-        st.image(preview_frame, channels="BGR", use_container_width=True)
+        st.image(processed, use_container_width=True)
         
-        # --- 4. EXPORT ACTION ---
-        st.markdown("---")
-        if st.button("🎬 EXPORT & DOWNLOAD FINAL VIDEO"):
+        # --- 5. ULTRA QUALITY EXPORT ---
+        if st.button("🎬 EXPORT HIGH-QUALITY VIDEO"):
             progress = st.progress(0)
-            status = st.empty()
-            
             cap = cv2.VideoCapture(tfile.name)
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            h, w = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            fps, h, w = cap.get(cv2.CAP_PROP_FPS), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             
             raw_out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
+            # Exporting in RGB to maintain color accuracy
             out = cv2.VideoWriter(raw_out, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
 
             for i in range(total_frames):
                 ret, frame = cap.read()
                 if not ret: break
                 
-                f = frame.astype(np.float32) / 255.0
-                f = 1 / (1 + np.exp(-10 * (f - 0.5) * crush))
-                f[:, :, 0] += tint
-                frame = (np.clip(f * sat, 0, 1) * 255).astype(np.uint8)
+                # Apply same RGB logic as preview
+                f_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                f_float = f_rgb.astype(np.float32) / 255.0
+                f_float = 1 / (1 + np.exp(-10 * (f_float - 0.5) * c_val))
+                f_float[:, :, 2] += t_val
+                f_final = (np.clip(f_float * s_val, 0, 1) * 255).astype(np.uint8)
                 
-                if vig_strength > 0:
-                    mask = np.ones((h, w), dtype=np.float32)
-                    cv2.ellipse(mask, (w//2, h//2), (int(w*0.6), int(h*0.7)), 0, 0, 360, 0, -1)
-                    mask = cv2.GaussianBlur(mask, (w//3|1, w//3|1), 0)
+                if v_val > 0:
                     for c in range(3):
-                        frame[:,:,c] = frame[:,:,c] * (1 - mask * vig_strength)
+                        f_final[:,:,c] = (f_final[:,:,c] * (1 - mask * v_val)).astype(np.uint8)
 
-                repeat = 1
-                if slow_active:
-                    p = (i / total_frames) * 100
-                    if ramp_start <= p <= ramp_end:
-                        repeat = int(1 / slow_speed)
-                
+                # Slow-Mo
+                repeat = int(1/speed) if (slow_active and ramp[0] <= (i/total_frames)*100 <= ramp[1]) else 1
                 for _ in range(repeat):
-                    out.write(frame)
+                    # Convert back to BGR for VideoWriter
+                    out.write(cv2.cvtColor(f_final, cv2.COLOR_RGB2BGR))
                 progress.progress(i / total_frames)
 
             cap.release()
             out.release()
             
-            status.info("Finalizing for mobile export...")
-            final_path = raw_out.replace(".mp4", "_final.mp4")
+            # Use High-Quality Bitrate (CRF 18 is near lossless)
+            final_path = raw_out.replace(".mp4", "_ultra.mp4")
             with VideoFileClip(raw_out) as clip:
-                clip.write_videofile(final_path, codec="libx264", audio_codec="aac")
+                clip.write_videofile(final_path, codec="libx264", audio_codec="aac", ffmpeg_params=["-crf", "18"])
                 
             with open(final_path, "rb") as f:
-                st.download_button("💾 DOWNLOAD COMPLETED CLIP", f, "Skaterade_Export.mp4")
-            st.success("Your edit is ready!")
-    else:
-        st.error("Failed to read the video file.")
-else:
-    # Landing state
-    st.info("👈 Upload your clip in the sidebar to enter the Skaterade Editor.")
+                st.download_button("💾 DOWNLOAD HD EDIT", f, "Skaterade_Ultra.mp4")
