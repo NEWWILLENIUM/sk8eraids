@@ -1,24 +1,26 @@
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
   SkipBack, 
   Film, 
-  Download, 
-  Eye,
-  Clock,
-  Upload,
-  Zap,
-  Maximize,
-  SlidersHorizontal,
-  MoveHorizontal,
-  Youtube,
-  Smartphone,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Share2
+  Eye, 
+  Clock, 
+  Upload, 
+  Zap, 
+  Maximize, 
+  SlidersHorizontal, 
+  MoveHorizontal, 
+  Youtube, 
+  Smartphone, 
+  CheckCircle2, 
+  AlertCircle, 
+  Loader2, 
+  Share2, 
+  Crop, 
+  Settings2,
+  RotateCcw
 } from 'lucide-react';
 import { vxService } from './services/vxService';
 import { 
@@ -31,23 +33,38 @@ import {
 } from './types';
 
 const App: React.FC = () => {
+  // Startup ASCII Banner
+  useEffect(() => {
+    console.log(`%c
+  /$$$$$$  /$$   /$$  /$$$$$$  /$$$$$$$$ /$$$$$$$$ /$$$$$$$   /$$$$$$  /$$$$$$$  /$$$$$$$$
+ /$$__  $$| $$  /$$/ /$$__  $$|__  $$__/| $$_____/| $$__  $$ /$$__  $$| $$__  $$| $$_____/
+| $$  \\__/| $$ /$$/ | $$  \\ $$   | $$   | $$      | $$  \\ $$| $$  \\ $$| $$  \\ $$| $$      
+|  $$$$$$ | $$$$$/  | $$$$$$$$   | $$   | $$$$$   | $$$$$$$/| $$$$$$$$| $$  | $$| $$$$$   
+ \\____  $$| $$  $$  | $$__  $$   | $$   | $$__/   | $$__  $$| $$__  $$| $$  | $$| $$__/   
+ /$$  \\ $$| $$\\  $$ | $$  | $$   | $$   | $$      | $$  \\ $$| $$  | $$| $$  | $$| $$      
+|  $$$$$$/| $$ \\  $$| $$  | $$   | $$   | $$$$$$$$| $$  | $$| $$  | $$| $$$$$$$/| $$$$$$$$
+ \\______/ |__/  \\__/|__/  |__/   |__/   |________/|__/  |__/|__/  |__/|_______/ |________/
+                                       v1.0 Beta - The Authentic VX1000 Experience
+    `, "color: #10b981; font-family: monospace; font-weight: bold;");
+  }, []);
+
   // Video States
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   
-  // Look State
+  // Manual Look State - ALL OFF BY DEFAULT (0 or 1.0 neutral)
   const [look, setLook] = useState<LookState>({
-    vxTint: 0.8, 
-    mk1Vignette: true,
-    fisheye: 0.8,
-    grain: 0.15,
-    exposure: 1.1,
-    contrast: 1.2,
-    saturation: 1.1
+    cyanBlueTint: 0, 
+    vignetteIntensity: 0, 
+    contrast: 0, // 0 = Neutral/Linear, 1 = Full S-Curve
+    sharpen: 0,
+    saturation: 1.0,
+    exposure: 1.0,
+    aspectRatio: 'original'
   });
 
-  // Motion State
+  // Motion State - STRICT LOCK: DO NOT MODIFY
   const [motion, setMotion] = useState<MotionState>({
     rampIntensity: 0.7,
     slowSpeed: 0.25,
@@ -64,11 +81,87 @@ const App: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedStyle, setSelectedStyle] = useState<VXStyle>(VXStyle.CLASSIC_LONGLENS);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+
+  // S-Curve Generation for Non-Linear Contrast (Protects Highs/Mids)
+  const sCurveTable = useMemo(() => {
+    const intensity = look.contrast;
+    const points = 12;
+    const table = [];
+    for (let i = 0; i < points; i++) {
+      const x = i / (points - 1);
+      // Classic Sigmoid / S-Curve approximation using cubic Hermite
+      const s = x * x * (3 - 2 * x);
+      // Weighted blend for non-destructive darkening
+      const val = x + (s - x) * intensity;
+      table.push(val.toFixed(4));
+    }
+    return table.join(' ');
+  }, [look.contrast]);
+
+  // Selective Tint Logic: Protects shadows by scaling tint intensity by luminance
+  const tintValues = useMemo(() => {
+    const t = look.cyanBlueTint;
+    return `
+      1.0 0.0 0.0 0.0 0.0
+      0.0 1.0 0.0 0.0 ${t * 0.08}
+      0.0 0.0 1.0 0.0 ${t * 0.18}
+      0.0 0.0 0.0 1.0 0.0
+    `;
+  }, [look.cyanBlueTint]);
+
+  // Preset Handler
+  const applyPreset = (preset: 'raw' | 'classic' | 'gritty' | 'master_mk1') => {
+    switch (preset) {
+      case 'raw':
+        setLook({
+          cyanBlueTint: 0,
+          vignetteIntensity: 0,
+          contrast: 0,
+          sharpen: 0,
+          saturation: 1.0,
+          exposure: 1.0,
+          aspectRatio: 'original'
+        });
+        break;
+      case 'master_mk1':
+        setLook({
+          cyanBlueTint: 0.72,
+          vignetteIntensity: 0.95,
+          contrast: 0.55,
+          sharpen: 0.35,
+          saturation: 1.25,
+          exposure: 1.10,
+          aspectRatio: '4:3'
+        });
+        break;
+      case 'classic':
+        setLook({
+          cyanBlueTint: 0.50,
+          vignetteIntensity: 0.75,
+          contrast: 0.40,
+          sharpen: 0.25,
+          saturation: 1.15,
+          exposure: 1.05,
+          aspectRatio: '4:3'
+        });
+        break;
+      case 'gritty':
+        setLook({
+          cyanBlueTint: 0.35,
+          vignetteIntensity: 0.90,
+          contrast: 0.85,
+          sharpen: 0.60,
+          saturation: 0.85,
+          exposure: 0.98,
+          aspectRatio: '4:3'
+        });
+        break;
+    }
+  };
 
   // Sync Video Element with State
   useEffect(() => {
@@ -89,7 +182,7 @@ const App: React.FC = () => {
     }
   }, [currentTime, isPlaying]);
 
-  // Smoother Speed Ramping Logic for Preview
+  // Motion Ramping Logic - STRICT LOCK: DO NOT MODIFY
   useEffect(() => {
     if (!videoRef.current || !isPlaying) return;
 
@@ -126,6 +219,7 @@ const App: React.FC = () => {
       setCurrentTime(0);
       setProcessingResult(null);
       setError(null);
+      applyPreset('raw'); // Critical: New import MUST start with 0 effects
     }
   };
 
@@ -142,28 +236,21 @@ const App: React.FC = () => {
       setStatus(ProcessingStatus.SIGNING);
       setError(null);
 
-      // 1. Sign
       const { upload_url, gcs_uri } = await vxService.signUpload(activeClip.file.name, activeClip.file.type);
       
-      // 2. Upload
       setStatus(ProcessingStatus.UPLOADING);
       await vxService.uploadFile(upload_url, activeClip.file, (progress) => {
         setUploadProgress(progress);
       });
 
-      // 3. Process
       setStatus(ProcessingStatus.PROCESSING);
-      const result = await vxService.processVideo(gcs_uri, selectedStyle);
+      const result = await vxService.processVideo(gcs_uri, VXStyle.RAW_MK1);
       
       setProcessingResult(result);
       setStatus(ProcessingStatus.COMPLETED);
     } catch (err: any) {
-      console.error('VX Cloud Error:', err);
-      let message = err.message || 'An unexpected error occurred.';
-      if (message.includes('Failed to fetch')) {
-        message = 'Cloud API connection failed. This might be a CORS issue or the backend is offline.';
-      }
-      setError(message);
+      console.error('Skaterade Cloud Error:', err);
+      setError(err.message || 'An unexpected error occurred during export.');
       setStatus(ProcessingStatus.ERROR);
     }
   };
@@ -175,24 +262,49 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#0a0a0b] text-slate-200 font-sans overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#050506] text-slate-200 font-sans overflow-hidden">
       <input type="file" accept="video/mp4,video/quicktime" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
 
-      {/* Header */}
-      <header className="h-16 px-8 flex items-center justify-between border-b border-white/5 bg-black/40 backdrop-blur-md z-30">
+      {/* Manual Control Header */}
+      <header className="h-16 px-8 flex items-center justify-between border-b border-white/5 bg-black/60 backdrop-blur-lg z-30">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.2)]">
-            <Zap className="text-black fill-black" size={24} />
+          <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+            <Settings2 className="text-black" size={24} />
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight italic uppercase leading-tight">
-              VX Skate <span className="text-emerald-500 font-black">Bot</span>
+              SKATERADE <span className="text-emerald-500 font-black">PRO MASTER</span>
             </h1>
-            <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Cloud Processor v3.1</p>
+            <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Sony CCD Engine v1.0 Beta - Authentic VX1000 Experience</p>
           </div>
         </div>
         
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 mr-4 bg-slate-900/40 p-1.5 rounded-xl border border-white/5">
+            <div className="relative group">
+              <select 
+                className="appearance-none bg-slate-900/80 border border-white/10 rounded-lg px-4 py-2 pr-10 text-[10px] font-black uppercase tracking-widest focus:outline-none hover:border-emerald-500/50 transition-all cursor-pointer min-w-[140px]"
+                onChange={(e) => applyPreset(e.target.value as any)}
+                value={look.vignetteIntensity === 0.95 ? 'master_mk1' : 'raw'}
+              >
+                <option value="raw">Raw (Clean)</option>
+                <option value="master_mk1">Master MK1 (Pro)</option>
+                <option value="classic">Classic VX</option>
+                <option value="gritty">Gritty / Grime</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 group-hover:text-emerald-500">
+                <SlidersHorizontal size={14} />
+              </div>
+            </div>
+            <button 
+              onClick={() => applyPreset('raw')}
+              title="Reset Skaterade CV filters"
+              className="p-2 hover:bg-white/5 rounded-lg text-slate-500 hover:text-emerald-400 transition-all border border-transparent hover:border-white/10"
+            >
+              <RotateCcw size={16} />
+            </button>
+          </div>
+          
           <button 
             onClick={() => fileInputRef.current?.click()}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-all flex items-center gap-2 border border-white/5"
@@ -206,7 +318,7 @@ const App: React.FC = () => {
           >
             {status === ProcessingStatus.IDLE || status === ProcessingStatus.COMPLETED || status === ProcessingStatus.ERROR ? (
               <>
-                <Share2 size={14} /> Process Cloud Edit
+                <Share2 size={14} /> Export Final Master
               </>
             ) : (
               <>
@@ -218,100 +330,110 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar: Controls */}
-        <aside className="w-80 bg-black/20 border-r border-white/5 p-6 flex flex-col gap-8 overflow-y-auto">
-          {/* Cloud Style Selector */}
-          <section>
-            <div className="flex items-center gap-2 mb-6">
-              <Film className="text-emerald-500" size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest text-slate-400">Processing Style</h2>
-            </div>
-            <div className="space-y-2">
-              <StyleButton 
-                label="Classic LongLens" 
-                active={selectedStyle === VXStyle.CLASSIC_LONGLENS} 
-                onClick={() => setSelectedStyle(VXStyle.CLASSIC_LONGLENS)}
-                description="4:3 aspect, classic Sony saturation."
-              />
-              <StyleButton 
-                label="Dynamic Fisheye" 
-                active={selectedStyle === VXStyle.FISHEYE_DYNAMIC} 
-                onClick={() => setSelectedStyle(VXStyle.FISHEYE_DYNAMIC)}
-                description="Aggressive barrel distortion, high contrast."
-              />
-              <StyleButton 
-                label="Raw MK1 Glass" 
-                active={selectedStyle === VXStyle.RAW_MK1} 
-                onClick={() => setSelectedStyle(VXStyle.RAW_MK1)}
-                description="Zero crop, edge vignettes, raw audio."
-              />
-            </div>
-          </section>
-
-          {/* Local Preview Look */}
+        {/* Modular Sidebar */}
+        <aside className="w-80 bg-black border-r border-white/5 p-6 flex flex-col gap-8 overflow-y-auto z-20">
+          
+          {/* Skaterade Look Section */}
           <section>
             <div className="flex items-center gap-2 mb-6">
               <Eye className="text-emerald-500" size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest text-slate-400">Preview Filters</h2>
+              <h2 className="text-xs font-black uppercase tracking-widest text-slate-400">SKATERADE FILTERING SUITE</h2>
             </div>
             
             <div className="space-y-5">
-              <div className="flex flex-col gap-2">
-                <ToggleOption 
-                  label="MK1 Glass Vignette" 
-                  active={look.mk1Vignette} 
-                  onClick={() => setLook(l => ({...l, mk1Vignette: !l.mk1Vignette}))} 
-                />
-              </div>
-
+              <ControlSlider 
+                label="Selective Cyan Tint" 
+                value={look.cyanBlueTint} 
+                onChange={v => setLook(l => ({...l, cyanBlueTint: v}))} 
+              />
+              <ControlSlider 
+                label="S-Curve Black Crush" 
+                value={look.contrast} 
+                onChange={v => setLook(l => ({...l, contrast: v}))} 
+              />
+              <ControlSlider 
+                label="Unsharp Mask Sharpness" 
+                value={look.sharpen} 
+                onChange={v => setLook(l => ({...l, sharpen: v}))} 
+              />
+              <ControlSlider 
+                label="CCD Saturation" 
+                min={0} max={2.0} step={0.01}
+                value={look.saturation} 
+                onChange={v => setLook(l => ({...l, saturation: v}))} 
+              />
+              <ControlSlider 
+                label="Master MK1 Vignette" 
+                value={look.vignetteIntensity} 
+                onChange={v => setLook(l => ({...l, vignetteIntensity: v}))} 
+              />
               <div className="h-[1px] bg-white/5 my-2" />
-              
-              <ControlSlider label="Sony VX Tint Intensity" value={look.vxTint} onChange={v => setLook(l => ({...l, vxTint: v}))} />
-              <ControlSlider label="MK1 Fisheye Field" value={look.fisheye} onChange={v => setLook(l => ({...l, fisheye: v}))} />
-              <ControlSlider label="CCD Grain" value={look.grain} onChange={v => setLook(l => ({...l, grain: v}))} />
-              <ControlSlider label="Exposure Offset" min={0.5} max={2} step={0.01} value={look.exposure} onChange={v => setLook(l => ({...l, exposure: v}))} />
-              <ControlSlider label="Dynamic Contrast" min={0.5} max={2} step={0.01} value={look.contrast} onChange={v => setLook(l => ({...l, contrast: v}))} />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Aspect Crop</span>
+                <button 
+                  onClick={() => setLook(l => ({...l, aspectRatio: l.aspectRatio === '4:3' ? 'original' : '4:3'}))}
+                  className={`px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${look.aspectRatio === '4:3' ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20' : 'bg-slate-800 text-slate-400'}`}
+                >
+                  {look.aspectRatio === '4:3' ? '4:3 Locked' : 'Native'}
+                </button>
+              </div>
             </div>
           </section>
 
-          {/* Motion Controls */}
-          <section>
+          {/* Separate Slow Motion Section - Logic strictly locked */}
+          <section className="pt-4 border-t border-white/5">
             <div className="flex items-center gap-2 mb-6">
               <Clock className="text-emerald-500" size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest text-slate-400">Motion Ramping</h2>
+              <h2 className="text-xs font-black uppercase tracking-widest text-slate-400">Speed Ramping</h2>
             </div>
             <div className="space-y-6">
               <ControlSlider label="Ramp Aggression" value={motion.rampIntensity} onChange={v => setMotion(m => ({...m, rampIntensity: v}))} />
-              <ControlSlider label="Slow-Mo Speed" min={0.1} max={0.75} step={0.05} value={motion.slowSpeed} onChange={v => setMotion(m => ({...m, slowSpeed: v}))} />
-              <ControlSlider label="Timing Window" min={0.05} max={0.4} step={0.01} value={motion.rampWidth} onChange={v => setMotion(m => ({...m, rampWidth: v}))} />
+              <ControlSlider label="Floor Speed" min={0.1} max={0.75} step={0.05} value={motion.slowSpeed} onChange={v => setMotion(m => ({...m, slowSpeed: v}))} />
+              <ControlSlider label="Ramp Width" min={0.05} max={0.4} step={0.01} value={motion.rampWidth} onChange={v => setMotion(m => ({...m, rampWidth: v}))} />
             </div>
           </section>
         </aside>
 
-        {/* Central Workspace */}
-        <div className="flex-1 flex flex-col bg-[#050506]">
+        {/* Workspace */}
+        <div className="flex-1 flex flex-col bg-[#050506] relative">
           {/* Main Preview */}
-          <div className="flex-1 relative flex items-center justify-center p-8">
+          <div className="flex-1 relative flex items-center justify-center p-8 overflow-hidden">
+            <svg className="hidden">
+              <defs>
+                <filter id="skaterade-pro-filter">
+                  {/* Cyan Tint Matrix - Balanced to avoid shadow contamination */}
+                  <feColorMatrix 
+                    type="matrix" 
+                    values={tintValues} 
+                  />
+                  {/* S-Curve Contrast Engine - Selective Black Darkening */}
+                  <feComponentTransfer>
+                    <feFuncR type="table" tableValues={sCurveTable} />
+                    <feFuncG type="table" tableValues={sCurveTable} />
+                    <feFuncB type="table" tableValues={sCurveTable} />
+                  </feComponentTransfer>
+                  {/* Subtle USM Kernel: High-pass blend that avoids digital white noise */}
+                  <feConvolveMatrix 
+                    order="3" 
+                    kernelMatrix={`0 -${look.sharpen * 0.8} 0 -${look.sharpen * 0.8} ${1 + look.sharpen * 3.2} -${look.sharpen * 0.8} 0 -${look.sharpen * 0.8} 0`} 
+                    preserveAlpha="true" 
+                  />
+                </filter>
+              </defs>
+            </svg>
+
             <div 
-              className="relative aspect-video w-full max-w-5xl bg-black rounded-3xl overflow-hidden shadow-[0_0_100px_rgba(0,0,0,0.5)] border border-white/5"
+              className={`relative h-full max-h-[82vh] bg-black rounded-sm overflow-hidden shadow-[0_0_120px_rgba(0,0,0,1)] border border-white/5 transition-all duration-500 ${look.aspectRatio === '4:3' ? 'aspect-[4/3]' : 'aspect-video'}`}
               style={{
                 filter: `
+                  url(#skaterade-pro-filter)
                   brightness(${look.exposure}) 
-                  contrast(${look.contrast + (look.vxTint * 0.2)}) 
-                  saturate(${look.saturation + (look.vxTint * 0.4)}) 
-                  sepia(${look.vxTint * 0.15}) 
-                  hue-rotate(${look.vxTint * -8}deg)
+                  saturate(${look.saturation})
                 `
               }}
             >
               {activeClip ? (
-                <div 
-                  className="w-full h-full relative"
-                  style={{
-                    transform: `scale(${1 + look.fisheye * 0.45})`,
-                    transition: 'transform 0.15s cubic-bezier(0.2, 0, 0.2, 1)'
-                  }}
-                >
+                <div className="w-full h-full relative">
                   <video
                     ref={videoRef}
                     src={activeClip.url}
@@ -321,47 +443,25 @@ const App: React.FC = () => {
                     onEnded={() => setIsPlaying(false)}
                   />
                   
-                  {look.mk1Vignette && (
-                    <div className="absolute inset-0 pointer-events-none z-20">
-                      <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                         <defs>
-                           <mask id="lensMask">
-                             <rect width="100" height="100" fill="white" />
-                             {/* Small radius for realistic MK1 glass cutoff */}
-                             <circle cx="50" cy="50" r="45" fill="black" />
-                           </mask>
-                           <filter id="lensBlur">
-                             <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" />
-                           </filter>
-                         </defs>
-                         {/* Softer edge blackout using filter stdDeviation 1.8 */}
-                         <rect width="100" height="100" fill="#000" mask="url(#lensMask)" filter="url(#lensBlur)" />
-                         
-                         {/* Glass edge reflections and chromatic aberration effects */}
-                         <circle cx="50" cy="50" r="47.1" fill="none" stroke="#fff" strokeWidth="0.08" opacity="0.12" />
-                         <circle cx="50" cy="50" r="45.5" fill="none" stroke="#3b82f6" strokeWidth="0.04" opacity="0.08" />
-                         <circle cx="50" cy="50" r="45.2" fill="none" stroke="#60a5fa" strokeWidth="0.02" opacity="0.15" />
-                         <circle cx="50" cy="50" r="44.8" fill="none" stroke="#ef4444" strokeWidth="0.02" opacity="0.04" />
-                      </svg>
-                      {/* Refined realistic radial falloff from transparent 25% to deep black 94% */}
+                  {/* Master MK1 Vignette: Refined falloff for harsher corners with soft transition */}
+                  {look.vignetteIntensity > 0 && (
+                    <div className="absolute inset-0 pointer-events-none z-20" style={{ opacity: look.vignetteIntensity }}>
                       <div className="absolute inset-0" style={{
-                        background: `radial-gradient(circle at center, transparent 25%, rgba(0,0,0,0.02) 50%, rgba(0,0,0,0.15) 75%, rgba(0,0,0,0.85) 94%)`
+                        background: `radial-gradient(circle at center, 
+                          transparent 38%, 
+                          rgba(0,0,0,0.06) 58%, 
+                          rgba(0,0,0,0.40) 78%, 
+                          rgba(0,0,0,0.96) 91%, 
+                          #000 96%, 
+                          #000 100%)`
                       }} />
                     </div>
                   )}
-
-                  <div 
-                    className="absolute inset-0 pointer-events-none opacity-20 mix-blend-overlay"
-                    style={{ 
-                      backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-                      opacity: look.grain 
-                    }}
-                  />
                 </div>
               ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-700">
-                  <Film size={64} className="mb-4 opacity-10" />
-                  <p className="text-sm font-bold uppercase tracking-widest opacity-30 text-center">Load a raw VX clip to begin</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-800">
+                  <Film size={64} className="mb-4 opacity-5" />
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-20 text-center">Skaterade Pro Engine: Ready</p>
                 </div>
               )}
 
@@ -381,7 +481,7 @@ const App: React.FC = () => {
             {/* Cloud Status Overlay */}
             {status !== ProcessingStatus.IDLE && (
               <div className="absolute top-12 left-1/2 -translate-x-1/2 z-40 w-full max-w-lg px-6">
-                <div className="bg-black/80 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-2xl overflow-hidden relative">
+                <div className="bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-2xl overflow-hidden relative">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       {status === ProcessingStatus.COMPLETED ? (
@@ -397,15 +497,12 @@ const App: React.FC = () => {
                         </h3>
                         <p className="text-[10px] text-slate-500 font-mono">
                           {status === ProcessingStatus.UPLOADING && `Payload stream: ${uploadProgress}%`}
-                          {status === ProcessingStatus.PROCESSING && "Engaging VX Cloud GPUs..."}
-                          {status === ProcessingStatus.COMPLETED && "Edit rendered successfully"}
+                          {status === ProcessingStatus.PROCESSING && "Engaging Skaterade Cloud GPUs..."}
+                          {status === ProcessingStatus.COMPLETED && "Skaterade export successful"}
                           {status === ProcessingStatus.ERROR && "Processing failed"}
                         </p>
                       </div>
                     </div>
-                    {status === ProcessingStatus.COMPLETED && (
-                      <button onClick={() => setStatus(ProcessingStatus.IDLE)} className="text-[10px] text-slate-500 hover:text-white uppercase font-black">Dismiss</button>
-                    )}
                   </div>
 
                   {(status === ProcessingStatus.UPLOADING || status === ProcessingStatus.PROCESSING) && (
@@ -425,7 +522,7 @@ const App: React.FC = () => {
                         rel="noreferrer"
                         className="flex items-center justify-center gap-2 bg-red-600/20 hover:bg-red-600/40 text-red-500 py-3 rounded-xl border border-red-500/20 transition-all text-[11px] font-black uppercase tracking-tighter"
                       >
-                        <Youtube size={16} /> Watch YouTube (4:3)
+                        <Youtube size={16} /> View Preview
                       </a>
                       <a 
                         href={processingResult.vertical_url} 
@@ -433,7 +530,7 @@ const App: React.FC = () => {
                         rel="noreferrer"
                         className="flex items-center justify-center gap-2 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400 py-3 rounded-xl border border-emerald-500/20 transition-all text-[11px] font-black uppercase tracking-tighter"
                       >
-                        <Smartphone size={16} /> Download Vertical
+                        <Smartphone size={16} /> Final Asset
                       </a>
                     </div>
                   )}
@@ -448,15 +545,15 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {/* Timeline */}
-          <div className="h-48 bg-black/40 border-t border-white/5 px-12 py-8">
+          {/* Locked Ramping Timeline */}
+          <div className="h-48 bg-black border-t border-white/5 px-12 py-8">
             <div className="flex items-center justify-between mb-4">
               <div className="text-[11px] font-mono text-emerald-500 font-bold uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </div>
               <div className="flex items-center gap-6">
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase">
-                  <SlidersHorizontal size={14} /> Playback: {videoRef.current?.playbackRate.toFixed(2)}x
+                  <SlidersHorizontal size={14} /> Sync Status: {videoRef.current?.playbackRate.toFixed(2)}x
                 </div>
               </div>
             </div>
@@ -481,7 +578,7 @@ const App: React.FC = () => {
                 }}
               >
                 <div className="text-[8px] font-black uppercase text-emerald-500/50 flex items-center gap-1 pointer-events-none">
-                  <MoveHorizontal size={10} /> Trick Zone
+                  <MoveHorizontal size={10} /> Ramp Window
                 </div>
               </div>
 
@@ -542,18 +639,6 @@ const App: React.FC = () => {
   );
 };
 
-const ToggleOption: React.FC<{ label: string; active: boolean; onClick: () => void }> = ({ label, active, onClick }) => (
-  <button 
-    onClick={onClick}
-    className={`w-full flex justify-between items-center p-3 rounded-xl border transition-all duration-300 ${
-      active ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[inset_0_0_15px_rgba(16,185,129,0.05)]' : 'bg-slate-900/50 border-white/5 text-slate-500 hover:text-slate-200'
-    }`}
-  >
-    <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>
-    <div className={`w-3 h-3 rounded-full transition-all ${active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-800'}`} />
-  </button>
-);
-
 const ControlSlider: React.FC<{ label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }> = ({ label, value, onChange, min = 0, max = 1, step = 0.01 }) => (
   <div className="space-y-3">
     <div className="flex justify-between items-center">
@@ -568,21 +653,6 @@ const ControlSlider: React.FC<{ label: string; value: number; onChange: (v: numb
       onChange={e => onChange(parseFloat(e.target.value))} 
     />
   </div>
-);
-
-const StyleButton: React.FC<{ label: string; description: string; active: boolean; onClick: () => void }> = ({ label, description, active, onClick }) => (
-  <button 
-    onClick={onClick}
-    className={`w-full text-left p-3 rounded-xl border transition-all duration-300 group ${
-      active ? 'bg-white/10 border-white/20 text-white' : 'bg-slate-900/30 border-white/5 text-slate-500 hover:text-slate-400'
-    }`}
-  >
-    <div className="flex items-center justify-between mb-1">
-      <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>
-      {active && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-    </div>
-    <p className="text-[9px] font-mono opacity-60 leading-tight">{description}</p>
-  </button>
 );
 
 export default App;

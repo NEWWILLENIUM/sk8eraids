@@ -1,6 +1,6 @@
 {
-  "name": "VX Skate Bot Cloud Editor",
-  "description": "A professional-grade skate video editor with a classic VX1000 aesthetic and cloud-powered video processing. Upload clips, apply custom speed ramps, and process them into high-quality social-ready formats.",
+  "name": "Skaterade Cloud Editor",
+  "description": "The authentic VX1000 experience. A professional-grade skate video editor with a classic Sony aesthetic and cloud-powered video processing.",
   "requestFramePermissions": [
     "camera"
   ]

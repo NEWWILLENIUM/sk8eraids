@@ -20,13 +20,13 @@ export interface ProcessingResult {
 }
 
 export interface LookState {
-  vxTint: number; // Changed from boolean to number (0 to 1)
-  mk1Vignette: boolean;
-  fisheye: number;
-  grain: number;
-  exposure: number;
-  contrast: number;
+  cyanBlueTint: number;
+  vignetteIntensity: number;
+  contrast: number; // Black Crush
+  sharpen: number;  // Digital edge enhancement
   saturation: number;
+  exposure: number;
+  aspectRatio: 'original' | '4:3';
 }
 
 export interface MotionState {
